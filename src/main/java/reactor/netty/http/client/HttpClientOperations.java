@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-Present Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-Present VMware, Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -75,6 +75,7 @@ import reactor.netty.FutureMono;
 import reactor.netty.NettyInbound;
 import reactor.netty.NettyOutbound;
 import reactor.netty.NettyPipeline;
+import reactor.netty.channel.AbortedException;
 import reactor.netty.channel.ChannelOperations;
 import reactor.netty.http.Cookies;
 import reactor.netty.http.HttpOperations;
@@ -103,6 +104,7 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 	volatile ResponseState responseState;
 
 	boolean started;
+	boolean redirected;
 
 	BiPredicate<HttpClientRequest, HttpClientResponse> followRedirectPredicate;
 	Consumer<HttpClientRequest> redirectRequestConsumer;
@@ -110,6 +112,7 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 	HttpClientOperations(HttpClientOperations replaced) {
 		super(replaced);
 		this.started = replaced.started;
+		this.redirected = replaced.redirected;
 		this.redirectedFrom = replaced.redirectedFrom;
 		this.isSecure = replaced.isSecure;
 		this.nettyRequest = replaced.nettyRequest;
@@ -350,6 +353,9 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 
 	@Override
 	public NettyOutbound send(Publisher<? extends ByteBuf> source) {
+		if (!channel().isActive()) {
+			return then(Mono.error(new AbortedException("Connection has been closed BEFORE send operation")));
+		}
 		if (source instanceof Mono) {
 			return super.send(source);
 		}
@@ -434,7 +440,7 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 	}
 
 	@Override
-	public final String path() {
+	public final String fullPath() {
 		return this.path;
 	}
 
@@ -555,12 +561,22 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 					return;
 				}
 			}
+			else {
+				redirected = true;
+			}
+
 			if (msg instanceof FullHttpResponse) {
 				super.onInboundNext(ctx, msg);
 				terminate();
 			}
 			return;
 		}
+
+		if (redirected) {
+			ReferenceCountUtil.release(msg);
+			return;
+		}
+
 		if (msg instanceof LastHttpContent) {
 			if (!started) {
 				if (log.isDebugEnabled()) {
@@ -637,6 +653,9 @@ class HttpClientOperations extends HttpOperations<NettyInbound, NettyOutbound>
 	}
 
 	final Mono<Void> send() {
+		if (!channel().isActive()) {
+			return Mono.error(new AbortedException("Connection has been closed BEFORE send operation"));
+		}
 		if (markSentHeaderAndBody()) {
 			HttpMessage request = newFullBodyMessage(Unpooled.EMPTY_BUFFER);
 			return FutureMono.deferFuture(() -> channel().writeAndFlush(request));

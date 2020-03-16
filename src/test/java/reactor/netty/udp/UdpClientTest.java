@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-Present Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-Present VMware, Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -70,7 +70,6 @@ public class UdpClientTest {
 				         .handle((in, out) -> {
 				                                  in.receive()
 				                                    .subscribe(b -> {
-				                                        System.out.println("Client1 received " + b.readCharSequence(b.readableBytes(), CharsetUtil.UTF_8));
 				                                        latch.countDown();
 				                                    });
 				                                  return out.sendString(Mono.just("ping1"))

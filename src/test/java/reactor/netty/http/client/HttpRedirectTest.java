@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-Present Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-Present VMware, Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,14 +19,22 @@ package reactor.netty.http.client;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import java.security.cert.CertificateException;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpMethod;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
+import io.netty.util.ReferenceCountUtil;
+import org.apache.commons.lang3.StringUtils;
 import org.junit.Ignore;
 import org.junit.Test;
 import reactor.core.publisher.Flux;
@@ -36,6 +44,7 @@ import reactor.netty.SocketUtils;
 import reactor.netty.http.server.HttpServer;
 import reactor.netty.resources.ConnectionProvider;
 import reactor.test.StepVerifier;
+import reactor.util.function.Tuple2;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -118,6 +127,45 @@ public class HttpRedirectTest {
 		assertThat(response).isNotNull();
 		assertThat(response.status()).isEqualTo(HttpResponseStatus.FOUND);
 		assertThat(response.responseHeaders().get("location")).isEqualTo("/3");
+
+		server.disposeNow();
+	}
+
+	/** This ensures functionality such as metrics and tracing can accurately count requests. */
+	@Test
+	public void redirect_issuesOnRequestForEachAttempt() {
+		DisposableServer server =
+				HttpServer.create()
+				          .port(0)
+				          .host("localhost")
+				          .wiretap(true)
+				          .route(r -> r.get("/1", (req, res) -> res.sendRedirect("/3"))
+				                       .get("/3", (req, res) -> res.status(200)
+				                                                   .sendString(Mono.just("OK"))))
+				          .bindNow();
+
+		AtomicInteger onRequestCount = new AtomicInteger();
+		AtomicInteger onResponseCount = new AtomicInteger();
+		AtomicInteger onRedirectCount = new AtomicInteger();
+		Tuple2<String, HttpResponseStatus> response =
+				HttpClient.create()
+				          .addressSupplier(server::address)
+				          .wiretap(true)
+				          .followRedirect(true)
+				          .doOnRequest((r, c) -> onRequestCount.incrementAndGet())
+				          .doOnResponse((r, c) -> onResponseCount.incrementAndGet())
+				          .doOnRedirect((r, c) -> onRedirectCount.incrementAndGet())
+				          .get()
+				          .uri("/1")
+				          .responseSingle((res, bytes) -> bytes.asString().zipWith(Mono.just(res.status())))
+				          .block(Duration.ofSeconds(30));
+
+		assertThat(response).isNotNull();
+		assertThat(response.getT1()).isEqualTo("OK");
+		assertThat(response.getT2()).isEqualTo(HttpResponseStatus.OK);
+		assertThat(onRequestCount.get()).isEqualTo(2);
+		assertThat(onResponseCount.get()).isEqualTo(1);
+		assertThat(onRedirectCount.get()).isEqualTo(1);
 
 		server.disposeNow();
 	}
@@ -542,5 +590,58 @@ public class HttpRedirectTest {
 
 		initialServer.disposeNow();
 		redirectServer.disposeNow();
+	}
+
+	@Test
+	public void testBuffersForRedirectWithContentShouldBeReleased() {
+		doTestBuffersForRedirectWithContentShouldBeReleased("Redirect response content!");
+	}
+
+	@Test
+	public void testBuffersForRedirectWithLargeContentShouldBeReleased() {
+		doTestBuffersForRedirectWithContentShouldBeReleased(StringUtils.repeat("a", 10000));
+	}
+
+	private void doTestBuffersForRedirectWithContentShouldBeReleased(String redirectResponseContent) {
+		final String initialPath = "/initial";
+		final String redirectPath = "/redirect";
+
+		DisposableServer server =
+				HttpServer.create()
+				          .port(0)
+				          .route(r -> r.get(initialPath,
+				                            (req, res) -> res.status(HttpResponseStatus.MOVED_PERMANENTLY)
+				                                             .header(HttpHeaderNames.LOCATION, redirectPath)
+				                                             .sendString(Mono.just(redirectResponseContent)))
+				                       .get(redirectPath, (req, res) -> res.send()))
+				          .wiretap(true)
+				          .bindNow();
+
+		final List<Integer> redirectBufferRefCounts = new ArrayList<>();
+		HttpClient.create()
+		          .doOnRequest((r, c) -> c.addHandler("test-buffer-released", new ChannelInboundHandlerAdapter() {
+
+		              @Override
+		              public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+		                  super.channelRead(ctx, msg);
+
+		                  if(initialPath.equals("/" + r.path()) && msg instanceof HttpContent) {
+		                      redirectBufferRefCounts.add(ReferenceCountUtil.refCnt(msg));
+		                  }
+		              }
+		          }))
+		          .wiretap(true)
+		          .followRedirect(true)
+		          .get()
+		          .uri("http://localhost:" + server.port() + initialPath)
+		          .response()
+		          .block(Duration.ofSeconds(30));
+
+		System.gc();
+
+		assertThat(redirectBufferRefCounts).as("The HttpContents belonging to the redirection response should all be released")
+		                                   .containsOnly(0);
+
+		server.disposeNow();
 	}
 }

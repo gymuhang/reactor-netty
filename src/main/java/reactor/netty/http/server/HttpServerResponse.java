@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-Present Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-Present VMware, Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -169,6 +169,7 @@ public interface HttpServerResponse extends NettyOutbound, HttpInfos {
 	 * @param websocketHandler the I/O handler for websocket transport
 	 * @param websocketServerSpec {@link WebsocketServerSpec} for websocket configuration
 	 * @return a {@link Mono} completing when upgrade is confirmed, otherwise fails
+	 * @since 0.9.5
 	 */
 	Mono<Void> sendWebsocket(
 			BiFunction<? super WebsocketInbound, ? super WebsocketOutbound, ? extends Publisher<Void>> websocketHandler,

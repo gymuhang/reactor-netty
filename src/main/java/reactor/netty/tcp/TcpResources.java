@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-Present Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-Present VMware, Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -120,6 +120,7 @@ public class TcpResources implements ConnectionProvider, LoopResources {
 	 * @param timeout the maximum amount of time to wait until the disposal of the underlying
 	 *                LoopResources regardless if a task was submitted during the quiet period
 	 * @return a {@link Mono} triggering the {@link #disposeLoopsAndConnections()} when subscribed to.
+	 * @since 0.9.3
 	 */
 	public static Mono<Void> disposeLoopsAndConnectionsLater(Duration quietPeriod, Duration timeout) {
 		return Mono.defer(() -> {

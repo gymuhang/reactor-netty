@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-Present Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-Present VMware, Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -364,6 +364,7 @@ public abstract class HttpClient {
 	 * <p>When the {@code BiFunction} passed in is not an implementation of this interface,
 	 * it indicates it does not differentiate between original and redirect requests, and
 	 * applies the same initialization logic.
+	 * @since 0.9.5
 	 */
 	public interface RedirectSendHandler extends BiFunction<HttpClientRequest, NettyOutbound, Publisher<Void>> {
 	}
@@ -568,7 +569,7 @@ public abstract class HttpClient {
 	 */
 	public final HttpClient doOnRequest(BiConsumer<? super HttpClientRequest, ? super Connection> doOnRequest) {
 		Objects.requireNonNull(doOnRequest, "doOnRequest");
-		return new HttpClientDoOn(this, doOnRequest, null, null, null);
+		return new HttpClientDoOn(this, doOnRequest, null, null, null, null);
 	}
 
 	/**
@@ -596,7 +597,7 @@ public abstract class HttpClient {
 	 */
 	public final HttpClient doAfterRequest(BiConsumer<? super HttpClientRequest, ? super Connection> doAfterRequest) {
 		Objects.requireNonNull(doAfterRequest, "doAfterRequest");
-		return new HttpClientDoOn(this, null, doAfterRequest, null, null);
+		return new HttpClientDoOn(this, null, doAfterRequest, null, null, null);
 	}
 
 	/**
@@ -609,7 +610,25 @@ public abstract class HttpClient {
 	 */
 	public final HttpClient doOnResponse(BiConsumer<? super HttpClientResponse, ? super Connection> doOnResponse) {
 		Objects.requireNonNull(doOnResponse, "doOnResponse");
-		return new HttpClientDoOn(this, null, null, doOnResponse, null);
+		return new HttpClientDoOn(this, null, null, doOnResponse, null, null);
+	}
+
+	/**
+	 * Setup a callback called after {@link HttpClientResponse} headers have been
+	 * received and the request is about to be redirected.
+	 *
+	 * <p>Note: This callback applies only if auto-redirect is enabled, e.g. via
+	 * {@link HttpClient#followRedirect(boolean)}.
+	 *
+	 * @param doOnRedirect a callback called after {@link HttpClientResponse} headers have been received
+	 * and the request is about to be redirected
+	 *
+	 * @return a new {@link HttpClient}
+	 * @since 0.9.6
+	 */
+	public final HttpClient doOnRedirect(BiConsumer<? super HttpClientResponse, ? super Connection> doOnRedirect) {
+		Objects.requireNonNull(doOnRedirect, "doOnRedirect");
+		return new HttpClientDoOn(this, null, null, null, null, doOnRedirect);
 	}
 
 	/**
@@ -633,10 +652,11 @@ public abstract class HttpClient {
 	 * and {@link HttpClientState#RESPONSE_COMPLETED} has been emitted.
 	 *
 	 * @return a new {@link HttpClient}
+	 * @since 0.9.5
 	 */
 	public final HttpClient doAfterResponseSuccess(BiConsumer<? super HttpClientResponse, ? super Connection> doAfterResponseSuccess) {
 		Objects.requireNonNull(doAfterResponseSuccess, "doAfterResponseSuccess");
-		return new HttpClientDoOn(this, null, null, null, doAfterResponseSuccess);
+		return new HttpClientDoOn(this, null, null, null, doAfterResponseSuccess, null);
 	}
 
 	/**
@@ -732,6 +752,7 @@ public abstract class HttpClient {
 	 * check the original and any number of subsequent redirect(s), including the one that
 	 * is in progress.
 	 * @return a new {@link HttpClient}
+	 * @since 0.9.5
 	 */
 	public final HttpClient followRedirect(boolean followRedirect, @Nullable Consumer<HttpClientRequest> redirectRequestConsumer) {
 		if (followRedirect) {
@@ -782,6 +803,7 @@ public abstract class HttpClient {
 	 * check the original and any number of subsequent redirect(s), including the one that
 	 * is in progress.
 	 * @return a new {@link HttpClient}
+	 * @since 0.9.5
 	 */
 	public final HttpClient followRedirect(BiPredicate<HttpClientRequest, HttpClientResponse> predicate,
 			@Nullable Consumer<HttpClientRequest> redirectRequestConsumer) {
@@ -1032,6 +1054,7 @@ public abstract class HttpClient {
 	 * @param proxyPing whether to proxy websocket ping frames or respond to them
 	 *
 	 * @return a {@link WebsocketSender} ready to consume for response
+	 * @since 0.9.3
 	 */
 	public final WebsocketSender websocket(boolean proxyPing) {
 		return websocket("", 65536, proxyPing);
@@ -1057,6 +1080,7 @@ public abstract class HttpClient {
 	 * @param proxyPing whether to proxy websocket ping frames or respond to them
 	 *
 	 * @return a {@link WebsocketSender} ready to consume for response
+	 * @since 0.9.3
 	 */
 	public final WebsocketSender websocket(String subprotocols, int maxFramePayloadLength, boolean proxyPing) {
 		Objects.requireNonNull(subprotocols, "subprotocols");

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-Present Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-Present VMware, Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -49,6 +49,7 @@ import reactor.netty.FutureMono;
 import reactor.netty.NettyInbound;
 import reactor.netty.NettyOutbound;
 import reactor.netty.NettyPipeline;
+import reactor.netty.ReactorNetty;
 import reactor.netty.channel.AbortedException;
 import reactor.netty.channel.ChannelOperations;
 import reactor.util.Logger;
@@ -99,6 +100,9 @@ public abstract class HttpOperations<INBOUND extends NettyInbound, OUTBOUND exte
 	@Override
 	@SuppressWarnings("unchecked")
 	public NettyOutbound send(Publisher<? extends ByteBuf> source) {
+		if (!channel().isActive()) {
+			return then(Mono.error(new AbortedException("Connection has been closed BEFORE send operation")));
+		}
 		if (source instanceof Mono) {
 			return new PostHeadersNettyOutbound(((Mono<ByteBuf>)source)
 					.flatMap(msg -> {
@@ -127,6 +131,10 @@ public abstract class HttpOperations<INBOUND extends NettyInbound, OUTBOUND exte
 
 	@Override
 	public NettyOutbound sendObject(Object message) {
+		if (!channel().isActive()) {
+			ReactorNetty.safeRelease(message);
+			return then(Mono.error(new AbortedException("Connection has been closed BEFORE send operation")));
+		}
 		if (!(message instanceof ByteBuf)) {
 			return super.sendObject(message);
 		}
@@ -327,10 +335,10 @@ public abstract class HttpOperations<INBOUND extends NettyInbound, OUTBOUND exte
 	}
 
 	/**
-	 * Returns the decoded path portion from the provided {@code uri} without the leading and trailing '/' if present
+	 * Returns the decoded path portion from the provided {@code uri}
 	 *
 	 * @param uri an HTTP URL that may contain a path with query/fragment
-	 * @return the decoded path portion from the provided {@code uri} without the leading and trailing '/' if present
+	 * @return the decoded path portion from the provided {@code uri}
 	 */
 	public static String resolvePath(String uri) {
 		if (uri.isEmpty()) {
@@ -345,20 +353,8 @@ public abstract class HttpOperations<INBOUND extends NettyInbound, OUTBOUND exte
 			tempUri = "http://" + tempUri;
 		}
 
-		String path = URI.create(tempUri)
-		                 .getPath();
-		if (!path.isEmpty()) {
-			if (path.charAt(0) == '/') {
-				path = path.substring(1);
-				if (path.isEmpty()) {
-					return path;
-				}
-			}
-			if (path.charAt(path.length() - 1) == '/') {
-				return path.substring(0, path.length() - 1);
-			}
-		}
-		return path;
+		return URI.create(tempUri)
+		          .getPath();
 	}
 
 	/**

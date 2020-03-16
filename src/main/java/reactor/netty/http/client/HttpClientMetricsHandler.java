@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-Present Pivotal Software Inc, All Rights Reserved.
+ * Copyright (c) 2011-Present VMware, Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,7 +63,7 @@ final class HttpClientMetricsHandler extends ChannelDuplexHandler {
 			ChannelOperations<?,?> channelOps = ChannelOperations.get(ctx.channel());
 			if (channelOps instanceof HttpClientOperations) {
 				HttpClientOperations ops = (HttpClientOperations) channelOps;
-				path = "/" + ops.path;
+				path = ops.path;
 				method = ops.method().name();
 			}
 
